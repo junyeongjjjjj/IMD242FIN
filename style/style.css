@@ -1,3 +1,4 @@
+@charset "UTF-8";
 :root {
   --canvas-section-bg: oklch(0% 0 0deg);
   --info-section-bg: oklch(96% 0 0deg);
@@ -59,7 +60,7 @@ ol {
 
 .container {
   max-width: 60rem;
-  min-height: 100svh;
+  min-height: calc(100svh - 3rem);
   padding-block: 5rem 8rem;
   padding-inline: 5rem;
   margin-inline: auto;
@@ -161,6 +162,9 @@ ol {
   color: oklch(50% 0.22 270deg);
   text-decoration: none;
 }
-.references span {
-  font-style: italic;
+.references span::before {
+  content: "“";
+}
+.references span::after {
+  content: "”";
 }
