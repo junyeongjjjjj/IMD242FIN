@@ -33,19 +33,17 @@ function setup() {
 
   createCanvas(containerW, containerH).parent(container);
 
-  // 비디오 엘리먼트 생성
   videoElement = createCapture(VIDEO);
   videoElement.size(64, 48); // 더 낮은 해상도로 비디오 설정
   videoElement.hide();
 
-  // MediaPipe Hands 초기화
   hands = new Hands({
     locateFile: (file) =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
   });
 
   hands.setOptions({
-    maxNumHands: 2,
+    maxNumHands: 4,
     modelComplexity: 1,
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5,
@@ -55,14 +53,13 @@ function setup() {
     handLandmarks = results.multiHandLandmarks || [];
   });
 
-  // MediaPipe Face Mesh 초기화
   faceMesh = new FaceMesh({
     locateFile: (file) =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
   });
 
   faceMesh.setOptions({
-    maxNumFaces: 1,
+    maxNumFaces: 2,
     refineLandmarks: true,
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5,
@@ -72,7 +69,6 @@ function setup() {
     faceLandmarks = results.multiFaceLandmarks || [];
   });
 
-  // MediaPipe Camera 초기화
   camera = new Camera(videoElement.elt, {
     onFrame: async () => {
       await hands.send({ image: videoElement.elt });
@@ -88,7 +84,7 @@ function setup() {
 }
 
 function draw() {
-  background(200); // 밝은 중간 회색 배경
+  background(255); // 밝은 중간 회색 배경
 
   if (asciiFrameSkip % asciiUpdateRate === 0) {
     drawAsciiCamera();
@@ -96,16 +92,27 @@ function draw() {
   asciiFrameSkip++;
 
   drawFingerTips(); // 손가락 끝만 표시
-  checkHandCollision(); // 두 손 영역이 겹치는지 확인
 
   if (showFullCamera) {
     image(videoElement, 0, 0, width, height);
     return;
   }
 
+  fill(0); // 검은색 텍스트 색상
+  textSize(100); // 텍스트 크기
+  textAlign(CENTER, CENTER); // 텍스트 정렬
+
   switch (currentMode) {
     case 0: // 아스키 모드
       drawAsciiCamera(true); // 아스키 모드에서는 빨간색
+      // 검은색 텍스트 색상
+      fill(255, 0, 0, 255);
+      textSize(50); // 텍스트 크기
+      textStyle(BOLD);
+      text('Open your mouth', width / 2, height / 14);
+      textSize(30);
+      textStyle(0);
+      text('V pose, you can do the next mode.', width / 2, height - 30); // 하단에 텍스트 표시
       break;
     case 1: // 파티클 모드
       drawAsciiCamera(false); // 파티클 모드에서는 원래 색상
@@ -113,10 +120,25 @@ function draw() {
         particle.update();
         particle.draw();
       });
+      fill(0, 0, 0, 255);
+      textSize(50); // 텍스트 크기
+      textStyle(BOLD);
+      text('Move your hands', width / 2, height / 14);
+      textSize(30);
+      textStyle(0);
+      text('V pose, you can do the next mode.', width / 2, height - 30);
       break;
     case 2: // 그림 모드
-      drawAsciiCamera(false); // 그림 모드에서는 원래 색상
+      drawAsciiCamera(false, [0, 0, 255]); // 그림 모드에서는 원래 색상
       drawDrawingMode();
+      fill(0, 0, 255, 255);
+      noStroke();
+      textSize(50); // 텍스트 크기
+      textStyle(BOLD);
+      text('Draw freely, erased make a fist', width / 2, height / 14);
+      textSize(30);
+      textStyle(0);
+      text('V pose, you can do the next mode.', width / 2, height - 30);
       break;
   }
 
@@ -143,8 +165,27 @@ function drawAsciiCamera(isAsciiMode = false) {
   textSize(videoScale);
   textAlign(CENTER, CENTER);
 
-  // 아스키 모드일 때는 빨간색, 그렇지 않으면 회색
   fill(isAsciiMode ? [255, 0, 0] : [50, 50, 50]);
+
+  let mouthCenter = null;
+  let mouthRadius = 0;
+
+  if (isAsciiMode && isMouthOpen()) {
+    const face = faceLandmarks[0];
+    const upperLip = face[13];
+    const lowerLip = face[14];
+
+    const upperLipX = upperLip.x * width;
+    const upperLipY = upperLip.y * height;
+    const lowerLipX = lowerLip.x * width;
+    const lowerLipY = lowerLip.y * height;
+
+    mouthCenter = {
+      x: (upperLipX + lowerLipX) / 2,
+      y: (upperLipY + lowerLipY) / 2,
+    };
+    mouthRadius = dist(upperLipX, upperLipY, lowerLipX, lowerLipY) * 3;
+  }
 
   for (let y = 0; y < videoElement.height; y += 1) {
     for (let x = 0; x < videoElement.width; x += 1) {
@@ -161,37 +202,28 @@ function drawAsciiCamera(isAsciiMode = false) {
       );
       const asciiChar = asciiChars[charIndex];
 
-      // 입 벌림 효과 (아스키 모드에서만)
+      const screenX = (x / videoElement.width) * width;
+      const screenY = (y / videoElement.height) * height;
+
       if (
-        isAsciiMode && // 아스키 모드일 때만
-        isMouthOpen() &&
-        x > videoElement.width / 3 &&
-        x < (2 * videoElement.width) / 3 &&
-        y > videoElement.height / 3 &&
-        y < (2 * videoElement.height) / 3
+        isAsciiMode &&
+        mouthCenter &&
+        dist(screenX, screenY, mouthCenter.x, mouthCenter.y) < mouthRadius
       ) {
-        const offsetX = random(-5, 5); // 흔들림 효과
+        const offsetX = random(-5, 5);
         const offsetY = random(-5, 5);
-        textSize(videoScale * 2); // 확대 효과
-        text(
-          asciiChar,
-          (x / videoElement.width) * width + offsetX,
-          (y / videoElement.height) * height + offsetY
-        );
-        textSize(videoScale); // 원래 크기로 복원
+        textSize(videoScale * 2);
+        text(asciiChar, screenX + offsetX, screenY + offsetY);
+        textSize(videoScale);
       } else {
-        text(
-          asciiChar,
-          (x / videoElement.width) * width,
-          (y / videoElement.height) * height
-        );
+        text(asciiChar, screenX, screenY);
       }
     }
   }
 }
 
 function drawFingerTips() {
-  fill(255, 0, 0); // 빨간색 원
+  fill(255, 0, 0);
   noStroke();
 
   handLandmarks.forEach((hand) => {
@@ -199,7 +231,7 @@ function drawFingerTips() {
       const point = hand[index];
       const x = point.x * width;
       const y = point.y * height;
-      ellipse(x, y, 10); // 손가락 끝에만 원 표시
+      ellipse(x, y, 10);
     });
   });
 }
@@ -208,8 +240,8 @@ function isMouthOpen() {
   if (faceLandmarks.length === 0) return false;
 
   const face = faceLandmarks[0];
-  const upperLip = face[13]; // 윗입술
-  const lowerLip = face[14]; // 아랫입술
+  const upperLip = face[13];
+  const lowerLip = face[14];
 
   const lipDistance = dist(
     upperLip.x * width,
@@ -218,7 +250,7 @@ function isMouthOpen() {
     lowerLip.y * height
   );
 
-  return lipDistance > 30; // 입이 일정 이상 벌어졌는지 확인
+  return lipDistance > 30;
 }
 
 function detectVGesture() {
@@ -243,7 +275,7 @@ function detectVGesture() {
       currentTime - lastGestureTime > 1000
     ) {
       lastGestureTime = currentTime;
-      currentMode = (currentMode + 1) % 3; // 0, 1, 2 모드 순환
+      currentMode = (currentMode + 1) % 3;
       console.log(`Mode changed to ${currentMode}`);
     }
   });
@@ -255,7 +287,7 @@ function isFingerOpen(hand, fingerIndex) {
   const tipIndex = fingerIndex * 4 + 3;
 
   if (!hand[mcpIndex] || !hand[pipIndex] || !hand[tipIndex]) {
-    return false; // 데이터가 없으면 닫힌 것으로 처리
+    return false;
   }
 
   const mcp = hand[mcpIndex];
@@ -267,7 +299,7 @@ function isFingerOpen(hand, fingerIndex) {
 
 function checkHandCollision() {
   if (handLandmarks.length < 2) {
-    showFullCamera = false; // 두 손이 없으면 전체 카메라 비활성화
+    showFullCamera = false;
     return;
   }
 
@@ -292,44 +324,39 @@ function checkHandCollision() {
 
   const [box1, box2] = handsBoundingBoxes;
 
-  // 충돌 여부 계산
   const isOverlapping =
     box1.minX < box2.maxX &&
     box1.maxX > box2.minX &&
     box1.minY < box2.maxY &&
     box1.maxY > box2.minY;
 
-  showFullCamera = isOverlapping; // 충돌 시 전체 카메라 활성화
+  showFullCamera = isOverlapping;
 }
 
 function drawDrawingMode() {
   noFill();
-  stroke(0, 0, 255); // 파란색 선
+  strokeWeight(5);
+  stroke(0, 0, 255);
 
   if (handLandmarks.length > 0) {
-    const hand = handLandmarks[0]; // 첫 번째 손 데이터
-    const indexTip = hand[8]; // 검지 끝 좌표
+    const hand = handLandmarks[0];
+    const indexTip = hand[8];
 
-    // 데이터 검증
     if (!indexTip || !hand) return;
 
-    const x = indexTip.x * width; // X 좌표
-    const y = indexTip.y * height; // Y 좌표
+    const x = indexTip.x * width;
+    const y = indexTip.y * height;
 
-    // 모든 손가락이 닫힌 상태 확인 (주먹 상태)
     const isErasing = [0, 1, 2, 3, 4].every(
       (fingerIndex) => !isFingerOpen(hand, fingerIndex)
     );
 
     if (isErasing) {
-      // 지우개 기능: 그림 데이터 삭제
       drawing = [];
     } else {
-      // 그림 그리기
       drawing.push({ x, y });
     }
 
-    // 저장된 좌표로 그림 그리기
     for (let i = 1; i < drawing.length; i++) {
       const prev = drawing[i - 1];
       const curr = drawing[i];
@@ -378,6 +405,40 @@ class Particle {
         }
       });
     });
+
+    if (isMouthOpen() && faceLandmarks.length > 0) {
+      const face = faceLandmarks[0];
+      const upperLip = face[13];
+      const lowerLip = face[14];
+
+      const upperLipX = upperLip.x * width;
+      const upperLipY = upperLip.y * height;
+      const lowerLipX = lowerLip.x * width;
+      const lowerLipY = lowerLip.y * height;
+
+      const mouthCenter = {
+        x: (upperLipX + lowerLipX) / 2,
+        y: (upperLipY + lowerLipY) / 2,
+      };
+
+      const mouthRadius = dist(upperLipX, upperLipY, lowerLipX, lowerLipY) * 3;
+
+      const mouthVector = createVector(mouthCenter.x, mouthCenter.y);
+      const fromMouthToParticle = p5.Vector.sub(currentVector, mouthVector);
+      const distanceToMouth = fromMouthToParticle.mag();
+
+      if (distanceToMouth < mouthRadius) {
+        let repulsionForce = map(
+          distanceToMouth,
+          0,
+          mouthRadius,
+          MAX_FORCE,
+          MIN_FORCE
+        );
+        fromMouthToParticle.setMag(repulsionForce);
+        totalForce.add(fromMouthToParticle);
+      }
+    }
 
     let fromParticleToTarget = p5.Vector.sub(targetVector, currentVector);
     let distanceToTarget = fromParticleToTarget.mag();
